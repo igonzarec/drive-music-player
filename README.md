@@ -12,7 +12,9 @@ Private web player for audio files stored in a Google Drive folder.
 
 ## Google setup
 
-Create one Google OAuth Client ID for the deployed app.
+The project owner has already configured a Google Cloud project and OAuth Client ID. New users do not need to create a Google Cloud project if the owner gives them the Client ID and the Drive folder is shared with their Google account.
+
+The owner setup is:
 
 1. Open Google Cloud Console.
 2. Create or select a project.
@@ -20,7 +22,7 @@ Create one Google OAuth Client ID for the deployed app.
 4. Configure the OAuth consent screen.
 5. Create an OAuth 2.0 Client ID with type `Web application`.
 6. Add authorized JavaScript origins:
-   - Local development: `http://localhost:5173`
+   - Local development: `http://localhost:3000`
    - Deployed app: your production URL
 7. Copy the client ID.
 
@@ -31,6 +33,34 @@ https://www.googleapis.com/auth/drive.readonly
 ```
 
 Your brother can use the same deployed app if the Drive folder is shared with his Google account and the OAuth app allows the deployed origin.
+
+## New user setup
+
+Use these steps if someone else wants to run the player locally.
+
+1. Make sure the Google Drive music folder is shared with their Google account.
+2. Send them the OAuth Client ID from the configured Google Cloud project. It looks like `1234567890-abc.apps.googleusercontent.com`.
+3. Have them clone the repo:
+
+```bash
+git clone https://github.com/igonzarec/drive-music-player.git
+cd drive-music-player
+```
+
+4. Install and run:
+
+```bash
+npm install
+npm run dev
+```
+
+5. Open `http://localhost:3000`.
+6. Paste the OAuth Client ID into `Google OAuth Client ID`.
+7. Click `Conectar Google` and accept the Drive read-only permission.
+8. Paste the shared Google Drive folder URL.
+9. Click `Cargar canciones`.
+
+If the user is outside the owner's Google organization, the owner may need to add that email as a test user or switch the OAuth audience to external.
 
 ## Local development
 
