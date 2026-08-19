@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type DriveFile = {
   id: string;
@@ -8,11 +8,6 @@ type DriveFile = {
   mimeType?: string;
   size?: string;
   modifiedTime?: string;
-};
-
-type DriveFolder = {
-  id: string;
-  name: string;
 };
 
 type CachedTrack = {
@@ -45,10 +40,34 @@ declare global {
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const CLIENT_ID_STORAGE_KEY = "drive-player-client-id";
+const FOLDER_STORAGE_KEY = "drive-player-folder-url";
 const VOLUME_STORAGE_KEY = "drive-player-volume";
 const AUDIO_CACHE_LIMIT_BYTES = 250 * 1024 * 1024;
-const ROOT_FOLDER: DriveFolder = { id: "root", name: "Mi unidad" };
-const SHARED_WITH_ME_ID = "shared-with-me";
+
+function extractFolderId(input: string) {
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch?.[1]) {
+    return folderMatch[1];
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const id = url.searchParams.get("id");
+    if (id) {
+      return id;
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
 
 function formatSize(size?: string) {
   if (!size) {
@@ -90,15 +109,6 @@ function buildDriveQuery(folderId: string) {
   ].join(" and ");
 }
 
-function buildFolderQuery(folderId: string) {
-  const escapedFolderId = escapeDriveQueryValue(folderId);
-  return [
-    `'${escapedFolderId}' in parents`,
-    "mimeType = 'application/vnd.google-apps.folder'",
-    "trashed = false",
-  ].join(" and ");
-}
-
 export default function Home() {
   const configuredClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -107,14 +117,11 @@ export default function Home() {
   const cacheTickRef = useRef(0);
 
   const [clientId, setClientId] = useState(configuredClientId);
-  const [folders, setFolders] = useState<DriveFolder[]>([]);
-  const [folderPath, setFolderPath] = useState<DriveFolder[]>([ROOT_FOLDER]);
-  const [currentFolderId, setCurrentFolderId] = useState(ROOT_FOLDER.id);
+  const [folderUrl, setFolderUrl] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [tracks, setTracks] = useState<DriveFile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isGoogleReady, setIsGoogleReady] = useState(false);
-  const [isLoadingFolders, setIsLoadingFolders] = useState(false);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -125,7 +132,7 @@ export default function Home() {
   const [position, setPosition] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
-  const [status, setStatus] = useState("Conecta Google para explorar tus carpetas.");
+  const [status, setStatus] = useState("Pega una URL de carpeta de Drive para empezar.");
   const [error, setError] = useState("");
 
   const currentTrack = tracks[currentIndex];
@@ -142,19 +149,12 @@ export default function Home() {
 
   useEffect(() => {
     setClientId(configuredClientId || localStorage.getItem(CLIENT_ID_STORAGE_KEY) || "");
+    setFolderUrl(localStorage.getItem(FOLDER_STORAGE_KEY) || "");
 
     const savedVolume = Number(localStorage.getItem(VOLUME_STORAGE_KEY));
     const nextVolume = Number.isFinite(savedVolume) ? Math.min(Math.max(savedVolume, 0), 1) : 1;
     setVolume(nextVolume);
   }, [configuredClientId]);
-
-  useEffect(() => {
-    if (!accessToken) {
-      return;
-    }
-
-    void openFolder(ROOT_FOLDER, [ROOT_FOLDER]);
-  }, [accessToken]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -305,39 +305,25 @@ export default function Home() {
     }
   }
 
-  async function loadDriveFolders(folderId: string) {
-    setIsLoadingFolders(true);
+  async function loadFolder(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    setError("");
 
-    try {
-      const query =
-        folderId === SHARED_WITH_ME_ID
-          ? "sharedWithMe = true and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-          : buildFolderQuery(folderId);
-      const params = new URLSearchParams({
-        q: query,
-        fields: "files(id,name,mimeType,modifiedTime)",
-        orderBy: "name",
-        pageSize: "1000",
-        includeItemsFromAllDrives: "true",
-        supportsAllDrives: "true",
-      });
-
-      const data = await fetchDriveFiles(params);
-      setFolders((data.files ?? []).map((folder) => ({ id: folder.id, name: folder.name })));
-    } finally {
-      setIsLoadingFolders(false);
-    }
-  }
-
-  async function loadAudioTracks(folderId: string, folderName: string) {
-    if (folderId === SHARED_WITH_ME_ID) {
-      setTracks([]);
-      setStatus("Elige una carpeta compartida para cargar canciones.");
+    const folderId = extractFolderId(folderUrl);
+    if (!folderId) {
+      setError("Pega la URL de una carpeta de Google Drive.");
       return;
     }
 
+    if (!accessToken) {
+      setError("Primero conecta tu cuenta de Google.");
+      return;
+    }
+
+    localStorage.setItem(FOLDER_STORAGE_KEY, folderUrl.trim());
+    resetPlayerForFolderChange();
     setIsLoadingTracks(true);
-    setStatus(`Buscando canciones en ${folderName}...`);
+    setStatus("Buscando canciones en la carpeta...");
 
     try {
       const params = new URLSearchParams({
@@ -352,40 +338,13 @@ export default function Home() {
       const data = await fetchDriveFiles(params);
       const files = data.files ?? [];
       setTracks(files);
-      setStatus(files.length ? `${files.length} canciones listas en ${folderName}.` : `No hay audio en ${folderName}.`);
+      setStatus(files.length ? `${files.length} canciones listas.` : "No encontre archivos de audio en esa carpeta.");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "No se pudo leer la carpeta.");
+      setStatus("No se pudo cargar la carpeta.");
     } finally {
       setIsLoadingTracks(false);
     }
-  }
-
-  async function openFolder(folder: DriveFolder, nextPath: DriveFolder[]) {
-    if (!accessToken) {
-      setError("Primero conecta tu cuenta de Google.");
-      return;
-    }
-
-    setError("");
-    resetPlayerForFolderChange();
-    setCurrentFolderId(folder.id);
-    setFolderPath(nextPath);
-
-    try {
-      await Promise.all([loadDriveFolders(folder.id), loadAudioTracks(folder.id, folder.name)]);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo leer Drive.");
-      setStatus("No se pudo cargar esa carpeta.");
-    }
-  }
-
-  async function openSharedWithMe() {
-    await openFolder({ id: SHARED_WITH_ME_ID, name: "Compartidas conmigo" }, [
-      { id: SHARED_WITH_ME_ID, name: "Compartidas conmigo" },
-    ]);
-  }
-
-  async function refreshCurrentFolder() {
-    const currentFolder = folderPath[folderPath.length - 1] ?? ROOT_FOLDER;
-    await openFolder(currentFolder, folderPath);
   }
 
   async function prepareTrack(track: DriveFile) {
@@ -633,88 +592,26 @@ export default function Home() {
               </button>
             </section>
 
-            <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold">Carpetas</h2>
-                <button
-                  className="rounded-md border border-[var(--accent)] px-3 py-1.5 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-60"
-                  type="button"
-                  onClick={refreshCurrentFolder}
-                  disabled={!accessToken || isLoadingFolders || isLoadingTracks}
-                >
-                  Refresh
-                </button>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className={`rounded-md border px-3 py-1.5 text-sm font-semibold transition ${
-                    currentFolderId === ROOT_FOLDER.id
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
-                      : "border-[var(--line)] text-[var(--muted)] hover:border-[var(--accent)]"
-                  }`}
-                  type="button"
-                  onClick={() => openFolder(ROOT_FOLDER, [ROOT_FOLDER])}
-                  disabled={!accessToken}
-                >
-                  Mi unidad
-                </button>
-                <button
-                  className={`rounded-md border px-3 py-1.5 text-sm font-semibold transition ${
-                    currentFolderId === SHARED_WITH_ME_ID
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
-                      : "border-[var(--line)] text-[var(--muted)] hover:border-[var(--accent)]"
-                  }`}
-                  type="button"
-                  onClick={openSharedWithMe}
-                  disabled={!accessToken}
-                >
-                  Compartidas conmigo
-                </button>
-              </div>
-
-              <nav className="mt-4 flex flex-wrap items-center gap-1 text-xs text-[var(--muted)]" aria-label="Ruta de carpeta">
-                {folderPath.map((folder, index) => (
-                  <span key={`${folder.id}-${index}`} className="inline-flex items-center gap-1">
-                    {index > 0 ? <span>/</span> : null}
-                    <button
-                      className="rounded px-1.5 py-1 font-semibold text-[var(--accent)] hover:bg-[var(--accent-soft)]"
-                      type="button"
-                      onClick={() => openFolder(folder, folderPath.slice(0, index + 1))}
-                    >
-                      {folder.name}
-                    </button>
-                  </span>
-                ))}
-              </nav>
-
-              <div className="mt-3 max-h-72 overflow-auto rounded-md border border-[var(--line)] bg-white">
-                {isLoadingFolders ? (
-                  <p className="px-3 py-4 text-sm text-[var(--muted)]">Leyendo carpetas...</p>
-                ) : folders.length ? (
-                  <ol className="divide-y divide-[var(--line)]">
-                    {folders.map((folder) => (
-                      <li key={folder.id}>
-                        <button
-                          className="grid w-full grid-cols-[auto_1fr] items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--row-hover)]"
-                          type="button"
-                          onClick={() => openFolder(folder, [...folderPath, folder])}
-                        >
-                          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent-strong)]">
-                            //
-                          </span>
-                          <span className="min-w-0 truncate font-semibold">{folder.name}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="px-3 py-4 text-sm text-[var(--muted)]">
-                    {accessToken ? "No hay subcarpetas aqui." : "Conecta Google para ver tus carpetas."}
-                  </p>
-                )}
-              </div>
-            </section>
+            <form className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm" onSubmit={loadFolder}>
+              <h2 className="text-base font-semibold">Carpeta</h2>
+              <label className="mt-4 block text-sm font-medium text-[var(--muted)]" htmlFor="folder-url">
+                URL de Google Drive
+              </label>
+              <textarea
+                id="folder-url"
+                className="mt-2 min-h-24 w-full resize-none rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                placeholder="https://drive.google.com/drive/folders/..."
+                value={folderUrl}
+                onChange={(event) => setFolderUrl(event.target.value)}
+              />
+              <button
+                className="mt-3 w-full rounded-md border border-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                type="submit"
+                disabled={isLoadingTracks || !accessToken}
+              >
+                {isLoadingTracks ? "Cargando..." : tracks.length ? "Refresh canciones" : "Cargar canciones"}
+              </button>
+            </form>
 
             <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)] shadow-sm">
               <h2 className="text-base font-semibold text-[var(--ink)]">Para compartirlo</h2>
@@ -781,7 +678,7 @@ export default function Home() {
                     ? "Buscando canciones..."
                     : tracks.length
                       ? "No hay resultados para esa busqueda."
-                      : "Elige una carpeta de Drive para ver sus canciones aqui."}
+                      : "Pega una URL de carpeta y carga canciones para verlas aqui."}
                 </div>
               )}
             </div>
