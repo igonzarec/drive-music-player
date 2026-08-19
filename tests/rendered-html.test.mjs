@@ -32,7 +32,9 @@ test("server-renders the Drive music player shell", async () => {
   assert.match(html, /Drive Music Player/);
   assert.match(html, /Reproductor privado para carpetas de Drive/);
   assert.match(html, /Google OAuth Client ID/);
-  assert.match(html, /URL de Google Drive/);
+  assert.match(html, /Carpetas/);
+  assert.match(html, /Mi unidad/);
+  assert.match(html, /Refresh/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|react-loading-skeleton/);
 });
 
