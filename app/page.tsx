@@ -588,13 +588,13 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[var(--page-bg)] pb-56 text-[var(--ink)] sm:pb-44 lg:pb-32">
-      <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5 sm:px-8 lg:px-10">
-        <header className="grid gap-4 border-b border-[var(--line)] pb-5 lg:grid-cols-[1fr_auto] lg:items-end">
+      <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3 py-4 sm:px-5 lg:px-10">
+        <header className="grid gap-3 border-b border-[var(--line)] pb-4 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
               Google Drive Music Player
             </p>
-            <h1 className="mt-2 text-3xl font-semibold text-balance sm:text-5xl">
+            <h1 className="mt-2 text-2xl font-semibold text-balance sm:text-4xl lg:text-5xl">
               Reproductor privado para carpetas de Drive.
             </h1>
           </div>
@@ -615,8 +615,8 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="grid flex-1 gap-5 py-5 lg:grid-cols-[390px_1fr]">
-          <aside className="flex flex-col gap-4">
+        <div className="grid flex-1 gap-5 py-4 lg:grid-cols-[390px_1fr] lg:py-5">
+          <aside className="hidden flex-col gap-4 lg:flex">
             <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
               <h2 className="text-base font-semibold">Conexion</h2>
               <label className="mt-4 block text-sm font-medium text-[var(--muted)]" htmlFor="client-id">
@@ -694,7 +694,7 @@ export default function Home() {
             </section>
           </aside>
 
-          <section className="flex min-h-[620px] flex-col rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-sm">
+          <section className="flex min-h-[calc(100vh-310px)] flex-col rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-sm lg:min-h-[620px]">
             <div className="border-b border-[var(--line)] p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
