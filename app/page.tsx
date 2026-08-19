@@ -16,6 +16,14 @@ type CachedTrack = {
   lastUsed: number;
 };
 
+function CacheCheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <span className={`cache-check ${className}`} aria-label="En cache" title="En cache">
+      <span aria-hidden="true">✓</span>
+    </span>
+  );
+}
+
 type TokenClient = {
   requestAccessToken: (options?: { prompt?: string }) => void;
 };
@@ -132,11 +140,13 @@ export default function Home() {
   const [position, setPosition] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [cachedTrackIds, setCachedTrackIds] = useState<string[]>([]);
   const [status, setStatus] = useState("Pega una URL de carpeta de Drive para empezar.");
   const [error, setError] = useState("");
 
   const currentTrack = tracks[currentIndex];
-  const cachedTrackCount = audioCacheRef.current.size;
+  const cachedTrackIdSet = useMemo(() => new Set(cachedTrackIds), [cachedTrackIds]);
+  const currentTrackIsCached = currentTrack ? cachedTrackIdSet.has(currentTrack.id) : false;
 
   const filteredTracks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -303,6 +313,8 @@ export default function Home() {
         break;
       }
     }
+
+    setCachedTrackIds([...audioCacheRef.current.keys()]);
   }
 
   async function loadFolder(event?: FormEvent<HTMLFormElement>) {
@@ -388,6 +400,7 @@ export default function Home() {
       lastUsed: ++cacheTickRef.current,
     });
     pruneAudioCache(track.id);
+    setCachedTrackIds([...audioCacheRef.current.keys()]);
 
     if (audioRef.current) {
       audioRef.current.src = nextUrl;
@@ -666,7 +679,10 @@ export default function Home() {
                             <span className="block truncate text-sm font-semibold">{getTrackTitle(track.name)}</span>
                             <span className="mt-1 block truncate text-xs text-[var(--muted)]">{track.name}</span>
                           </span>
-                          <span className="text-xs text-[var(--muted)]">{formatSize(track.size)}</span>
+                          <span className="flex items-center justify-end gap-2 text-xs text-[var(--muted)]">
+                            {cachedTrackIdSet.has(track.id) ? <CacheCheckIcon /> : null}
+                            <span>{formatSize(track.size)}</span>
+                          </span>
                         </button>
                       </li>
                     );
@@ -698,15 +714,14 @@ export default function Home() {
               />
               <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:px-4 lg:px-6">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
-                    {currentTrack ? getTrackTitle(currentTrack.name) : "Sin cancion seleccionada"}
+                  <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                    {currentTrackIsCached ? <CacheCheckIcon /> : null}
+                    <span className="truncate">
+                      {currentTrack ? getTrackTitle(currentTrack.name) : "Sin cancion seleccionada"}
+                    </span>
                   </p>
                   <p className="mt-1 truncate text-xs text-[var(--muted)]">
-                    {isLoadingAudio
-                      ? "Cargando audio..."
-                      : `${currentTrack?.name ?? "Carga una carpeta para empezar"}${
-                          cachedTrackCount ? ` · ${cachedTrackCount} en cache` : ""
-                        }`}
+                    {isLoadingAudio ? "Cargando audio..." : currentTrack?.name ?? "Carga una carpeta para empezar"}
                   </p>
                 </div>
 
