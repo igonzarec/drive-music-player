@@ -16,6 +16,22 @@
   --danger-line: #f0c6bf;
 }
 
+[data-theme="dark"] {
+  --page-bg: #111411;
+  --panel: #181d1a;
+  --player: #151b18;
+  --ink: #f3f7f1;
+  --muted: #a7b3ad;
+  --line: #303a34;
+  --accent: #6fc6ad;
+  --accent-strong: #9fdcc9;
+  --accent-soft: #213c34;
+  --row-hover: #202821;
+  --danger: #ffb4aa;
+  --danger-bg: #331d1b;
+  --danger-line: #6f3932;
+}
+
 @theme inline {
   --color-background: var(--page-bg);
   --color-foreground: var(--ink);
@@ -53,6 +69,21 @@ textarea:focus-visible {
 
 input[type="range"] {
   accent-color: var(--accent);
+}
+
+[data-theme="dark"] .bg-white {
+  background: #101511;
+  color: var(--ink);
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] textarea {
+  color: var(--ink);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #748079;
 }
 
 .control-button {
@@ -108,6 +139,16 @@ input[type="range"] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
+}
+
+[data-theme="dark"] .control-button {
+  background: #101511;
+  color: var(--ink);
+}
+
+[data-theme="dark"] .control-button.primary {
+  background: var(--accent);
+  color: #08110e;
 }
 
 .cache-check {

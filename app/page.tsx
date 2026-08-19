@@ -50,7 +50,11 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const CLIENT_ID_STORAGE_KEY = "drive-player-client-id";
 const FOLDER_STORAGE_KEY = "drive-player-folder-url";
 const VOLUME_STORAGE_KEY = "drive-player-volume";
-const AUDIO_CACHE_LIMIT_BYTES = 250 * 1024 * 1024;
+const THEME_STORAGE_KEY = "drive-player-theme";
+const AUDIO_CACHE_LIMIT_BYTES = 1024 * 1024 * 1024;
+const PROJECT_QUOTAS_URL =
+  "https://console.cloud.google.com/iam-admin/quotas?project=drive-music-player-506007&orgonly=true&supportedpurview=organizationId,folder,project";
+const GENERAL_QUOTAS_URL = "https://console.cloud.google.com/quotas?project=_";
 
 function extractFolderId(input: string) {
   const trimmed = input.trim();
@@ -88,6 +92,14 @@ function formatSize(size?: string) {
   }
 
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatCacheLimit(bytes: number) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(0)} GB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
 }
 
 function formatTime(value: number) {
@@ -141,6 +153,7 @@ export default function Home() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [cachedTrackIds, setCachedTrackIds] = useState<string[]>([]);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [status, setStatus] = useState("Pega una URL de carpeta de Drive para empezar.");
   const [error, setError] = useState("");
 
@@ -164,7 +177,17 @@ export default function Home() {
     const savedVolume = Number(localStorage.getItem(VOLUME_STORAGE_KEY));
     const nextVolume = Number.isFinite(savedVolume) ? Math.min(Math.max(savedVolume, 0), 1) : 1;
     setVolume(nextVolume);
+
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === "dark" || savedTheme === "light") {
+      setTheme(savedTheme);
+    }
   }, [configuredClientId]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -559,6 +582,10 @@ export default function Home() {
     });
   }
 
+  function toggleTheme() {
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
+  }
+
   return (
     <main className="min-h-screen bg-[var(--page-bg)] pb-56 text-[var(--ink)] sm:pb-44 lg:pb-32">
       <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5 sm:px-8 lg:px-10">
@@ -572,6 +599,13 @@ export default function Home() {
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
+            <button
+              className="rounded-full border border-[var(--line)] px-3 py-1 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+              type="button"
+              onClick={toggleTheme}
+            >
+              {theme === "dark" ? "Modo claro" : "Modo oscuro"}
+            </button>
             <span className="rounded-full border border-[var(--line)] px-3 py-1">
               {isGoogleReady ? "Google listo" : "Cargando Google"}
             </span>
@@ -632,6 +666,31 @@ export default function Home() {
                 El repo no guarda tokens ni musica. Tu hermano solo necesita acceso a la carpeta en Drive
                 y un OAuth Client ID autorizado para la URL donde publiquen la app.
               </p>
+            </section>
+
+            <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)] shadow-sm">
+              <h2 className="text-base font-semibold text-[var(--ink)]">Limites y cache</h2>
+              <p className="mt-3 leading-6">
+                El cache guarda audio en memoria hasta {formatCacheLimit(AUDIO_CACHE_LIMIT_BYTES)} por pestana.
+              </p>
+              <div className="mt-4 grid gap-2">
+                <a
+                  className="rounded-md border border-[var(--line)] px-3 py-2 font-semibold text-[var(--accent)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                  href={PROJECT_QUOTAS_URL}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Cuotas del proyecto
+                </a>
+                <a
+                  className="rounded-md border border-[var(--line)] px-3 py-2 font-semibold text-[var(--accent)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                  href={GENERAL_QUOTAS_URL}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Panel general de cuotas
+                </a>
+              </div>
             </section>
           </aside>
 

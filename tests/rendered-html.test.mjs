@@ -34,6 +34,9 @@ test("server-renders the Drive music player shell", async () => {
   assert.match(html, /Google OAuth Client ID/);
   assert.match(html, /URL de Google Drive/);
   assert.match(html, /Cargar canciones/);
+  assert.match(html, /Modo oscuro/);
+  assert.match(html, /Cuotas del proyecto/);
+  assert.match(html, /Panel general de cuotas/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|react-loading-skeleton/);
 });
 
