@@ -461,7 +461,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--page-bg)] text-[var(--ink)]">
+    <main className="min-h-screen bg-[var(--page-bg)] pb-56 text-[var(--ink)] sm:pb-44 lg:pb-32">
       <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5 sm:px-8 lg:px-10">
         <header className="grid gap-4 border-b border-[var(--line)] pb-5 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
@@ -593,7 +593,7 @@ export default function Home() {
               )}
             </div>
 
-            <footer className="border-t border-[var(--line)] bg-[var(--player)] p-4">
+            <footer className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--line)] bg-[var(--player)] px-4 py-3 shadow-[0_-12px_36px_rgba(24,33,31,0.12)]">
               <audio
                 ref={audioRef}
                 onEnded={playNext}
@@ -606,7 +606,7 @@ export default function Home() {
                   setIsMuted(event.currentTarget.muted || event.currentTarget.volume === 0);
                 }}
               />
-              <div className="flex flex-col gap-4">
+              <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:px-4 lg:px-6">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">
                     {currentTrack ? getTrackTitle(currentTrack.name) : "Sin cancion seleccionada"}
