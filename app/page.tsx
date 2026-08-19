@@ -15,6 +15,12 @@ type DriveFolder = {
   name: string;
 };
 
+type CachedTrack = {
+  objectUrl: string;
+  size: number;
+  lastUsed: number;
+};
+
 type TokenClient = {
   requestAccessToken: (options?: { prompt?: string }) => void;
 };
@@ -40,6 +46,7 @@ declare global {
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const CLIENT_ID_STORAGE_KEY = "drive-player-client-id";
 const VOLUME_STORAGE_KEY = "drive-player-volume";
+const AUDIO_CACHE_LIMIT_BYTES = 250 * 1024 * 1024;
 const ROOT_FOLDER: DriveFolder = { id: "root", name: "Mi unidad" };
 const SHARED_WITH_ME_ID = "shared-with-me";
 
@@ -96,7 +103,8 @@ export default function Home() {
   const configuredClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tokenClientRef = useRef<TokenClient | null>(null);
-  const objectUrlRef = useRef<string | null>(null);
+  const audioCacheRef = useRef<Map<string, CachedTrack>>(new Map());
+  const cacheTickRef = useRef(0);
 
   const [clientId, setClientId] = useState(configuredClientId);
   const [folders, setFolders] = useState<DriveFolder[]>([]);
@@ -121,6 +129,7 @@ export default function Home() {
   const [error, setError] = useState("");
 
   const currentTrack = tracks[currentIndex];
+  const cachedTrackCount = audioCacheRef.current.size;
 
   const filteredTracks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -202,9 +211,8 @@ export default function Home() {
 
   useEffect(() => {
     return () => {
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-      }
+      audioCacheRef.current.forEach((cachedTrack) => URL.revokeObjectURL(cachedTrack.objectUrl));
+      audioCacheRef.current.clear();
     };
   }, []);
 
@@ -256,16 +264,45 @@ export default function Home() {
       audioRef.current.load();
     }
 
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
-    }
-
     setIsPlaying(false);
     setTracks([]);
     setCurrentIndex(0);
     setPosition(0);
     setDuration(0);
+  }
+
+  function getAudioCacheSize() {
+    let size = 0;
+    audioCacheRef.current.forEach((cachedTrack) => {
+      size += cachedTrack.size;
+    });
+    return size;
+  }
+
+  function pruneAudioCache(protectedTrackId?: string) {
+    let cacheSize = getAudioCacheSize();
+
+    if (cacheSize <= AUDIO_CACHE_LIMIT_BYTES) {
+      return;
+    }
+
+    const cachedTracks = [...audioCacheRef.current.entries()].sort(
+      (first, second) => first[1].lastUsed - second[1].lastUsed,
+    );
+
+    for (const [trackId, cachedTrack] of cachedTracks) {
+      if (trackId === protectedTrackId) {
+        continue;
+      }
+
+      URL.revokeObjectURL(cachedTrack.objectUrl);
+      audioCacheRef.current.delete(trackId);
+      cacheSize -= cachedTrack.size;
+
+      if (cacheSize <= AUDIO_CACHE_LIMIT_BYTES) {
+        break;
+      }
+    }
   }
 
   async function loadDriveFolders(folderId: string) {
@@ -357,8 +394,22 @@ export default function Home() {
     }
 
     setIsLoadingAudio(true);
-    setStatus(`Cargando ${track.name}...`);
+    const cachedTrack = audioCacheRef.current.get(track.id);
 
+    if (cachedTrack) {
+      cachedTrack.lastUsed = ++cacheTickRef.current;
+
+      if (audioRef.current) {
+        audioRef.current.src = cachedTrack.objectUrl;
+        audioRef.current.load();
+      }
+
+      setIsLoadingAudio(false);
+      setStatus(`Listo desde cache: ${track.name}`);
+      return;
+    }
+
+    setStatus(`Descargando ${track.name} de Drive...`);
     const response = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -372,11 +423,12 @@ export default function Home() {
     const blob = await response.blob();
     const nextUrl = URL.createObjectURL(blob);
 
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-    }
-
-    objectUrlRef.current = nextUrl;
+    audioCacheRef.current.set(track.id, {
+      objectUrl: nextUrl,
+      size: blob.size,
+      lastUsed: ++cacheTickRef.current,
+    });
+    pruneAudioCache(track.id);
 
     if (audioRef.current) {
       audioRef.current.src = nextUrl;
@@ -753,7 +805,11 @@ export default function Home() {
                     {currentTrack ? getTrackTitle(currentTrack.name) : "Sin cancion seleccionada"}
                   </p>
                   <p className="mt-1 truncate text-xs text-[var(--muted)]">
-                    {isLoadingAudio ? "Cargando audio..." : currentTrack?.name ?? "Carga una carpeta para empezar"}
+                    {isLoadingAudio
+                      ? "Cargando audio..."
+                      : `${currentTrack?.name ?? "Carga una carpeta para empezar"}${
+                          cachedTrackCount ? ` · ${cachedTrackCount} en cache` : ""
+                        }`}
                   </p>
                 </div>
 
