@@ -118,6 +118,8 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
   const [status, setStatus] = useState("Pega una URL de carpeta de Drive para empezar.");
   const [error, setError] = useState("");
 
@@ -137,10 +139,18 @@ export default function Home() {
     setFolderUrl(localStorage.getItem(FOLDER_STORAGE_KEY) || "");
 
     const savedVolume = Number(localStorage.getItem(VOLUME_STORAGE_KEY));
-    if (audioRef.current && Number.isFinite(savedVolume)) {
-      audioRef.current.volume = savedVolume;
-    }
+    const nextVolume = Number.isFinite(savedVolume) ? Math.min(Math.max(savedVolume, 0), 1) : 1;
+    setVolume(nextVolume);
   }, [configuredClientId]);
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      return;
+    }
+
+    audioRef.current.volume = volume;
+    audioRef.current.muted = isMuted || volume === 0;
+  }, [isMuted, volume]);
 
   useEffect(() => {
     const scriptId = "google-identity-services";
@@ -404,13 +414,26 @@ export default function Home() {
   }
 
   function handleVolumeChange(value: string) {
-    const volume = Number(value);
-    if (!audioRef.current || !Number.isFinite(volume)) {
+    const nextVolume = Number(value);
+    if (!Number.isFinite(nextVolume)) {
       return;
     }
 
-    audioRef.current.volume = volume;
-    localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
+    const clampedVolume = Math.min(Math.max(nextVolume, 0), 1);
+    setVolume(clampedVolume);
+    setIsMuted(clampedVolume === 0);
+    localStorage.setItem(VOLUME_STORAGE_KEY, String(clampedVolume));
+  }
+
+  function toggleMute() {
+    if (volume === 0) {
+      setVolume(1);
+      setIsMuted(false);
+      localStorage.setItem(VOLUME_STORAGE_KEY, "1");
+      return;
+    }
+
+    setIsMuted((muted) => !muted);
   }
 
   function seek(value: string) {
@@ -578,6 +601,10 @@ export default function Home() {
                 onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onVolumeChange={(event) => {
+                  setVolume(event.currentTarget.volume);
+                  setIsMuted(event.currentTarget.muted || event.currentTarget.volume === 0);
+                }}
               />
               <div className="flex flex-col gap-4">
                 <div className="min-w-0">
@@ -649,18 +676,25 @@ export default function Home() {
                     </button>
                   </div>
 
-                  <label className="grid grid-cols-[auto_1fr] items-center gap-2 text-xs text-[var(--muted)]">
-                    Vol
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-2 text-xs text-[var(--muted)]">
+                    <button
+                      aria-label={isMuted || volume === 0 ? "Activar sonido" : "Silenciar"}
+                      className={`control-button text-button ${isMuted || volume === 0 ? "selected" : ""}`}
+                      type="button"
+                      onClick={toggleMute}
+                    >
+                      {isMuted || volume === 0 ? "Mute" : "Vol"}
+                    </button>
                     <input
                       aria-label="Volumen"
                       type="range"
                       min="0"
                       max="1"
                       step="0.01"
-                      defaultValue="1"
+                      value={volume}
                       onChange={(event) => handleVolumeChange(event.target.value)}
                     />
-                  </label>
+                  </div>
                 </div>
               </div>
             </footer>
