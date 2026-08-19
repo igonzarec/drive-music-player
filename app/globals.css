@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+:root {
+  --page-bg: #f4f1ea;
+  --panel: #fffefa;
+  --player: #f7f9f4;
+  --ink: #18211f;
+  --muted: #64706b;
+  --line: #d8ded3;
+  --accent: #2f7d69;
+  --accent-strong: #245f51;
+  --accent-soft: #e0f0e9;
+  --row-hover: #f3f7ee;
+  --danger: #9c2f2f;
+  --danger-bg: #fff1ef;
+  --danger-line: #f0c6bf;
+}
+
+@theme inline {
+  --color-background: var(--page-bg);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--page-bg);
+}
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(47, 125, 105, 0.24);
+  outline-offset: 2px;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+.control-button {
+  display: inline-flex;
+  min-width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.control-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.control-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.control-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.control-button.primary {
+  min-width: 52px;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.control-button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: #ffffff;
+}
+
+.control-button.text-button {
+  min-width: 56px;
+  padding: 0 12px;
+}
+
+.control-button.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
