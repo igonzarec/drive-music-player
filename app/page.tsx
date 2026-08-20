@@ -12,13 +12,37 @@ type DriveFile = {
 
 type CachedTrack = {
   objectUrl: string;
+  blob: Blob;
   size: number;
   lastUsed: number;
 };
 
-function CacheCheckIcon({ className = "" }: { className?: string }) {
+type PersistedTrackRecord = {
+  id: string;
+  folderId: string;
+  name: string;
+  mimeType?: string;
+  size?: string;
+  sizeBytes: number;
+  modifiedTime?: string;
+  blob: Blob;
+  savedAt: number;
+};
+
+type PersistedFolderRecord = {
+  folderId: string;
+  tracks: DriveFile[];
+  savedAt: number;
+};
+
+type PersistentCacheSummary = {
+  ids: string[];
+  totalBytes: number;
+};
+
+function CacheCheckIcon({ className = "", label = "En cache" }: { className?: string; label?: string }) {
   return (
-    <span className={`cache-check ${className}`} aria-label="En cache" title="En cache">
+    <span className={`cache-check ${className}`} aria-label={label} title={label}>
       <span aria-hidden="true">✓</span>
     </span>
   );
@@ -51,7 +75,12 @@ const CLIENT_ID_STORAGE_KEY = "drive-player-client-id";
 const FOLDER_STORAGE_KEY = "drive-player-folder-url";
 const VOLUME_STORAGE_KEY = "drive-player-volume";
 const THEME_STORAGE_KEY = "drive-player-theme";
+const PERSISTENT_CACHE_STORAGE_KEY = "drive-player-persistent-cache-enabled";
 const AUDIO_CACHE_LIMIT_BYTES = 1024 * 1024 * 1024;
+const PERSISTENT_CACHE_DB_NAME = "drive-music-player-cache";
+const PERSISTENT_CACHE_DB_VERSION = 1;
+const PERSISTENT_TRACK_STORE = "tracks";
+const PERSISTENT_FOLDER_STORE = "folders";
 const PROJECT_QUOTAS_URL =
   "https://console.cloud.google.com/iam-admin/quotas?project=drive-music-player-506007&orgonly=true&supportedpurview=organizationId,folder,project";
 const GENERAL_QUOTAS_URL = "https://console.cloud.google.com/quotas?project=_";
@@ -91,15 +120,23 @@ function formatSize(size?: string) {
     return "";
   }
 
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return formatBytes(bytes);
+}
+
+function formatBytes(bytes: number, fractionDigits = 1) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 MB";
+  }
+
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(fractionDigits)} GB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(fractionDigits)} MB`;
 }
 
 function formatCacheLimit(bytes: number) {
-  if (bytes >= 1024 * 1024 * 1024) {
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(0)} GB`;
-  }
-
-  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+  return formatBytes(bytes, 0);
 }
 
 function formatTime(value: number) {
@@ -129,6 +166,148 @@ function buildDriveQuery(folderId: string) {
   ].join(" and ");
 }
 
+function openPersistentCacheDatabase() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof window === "undefined" || !window.indexedDB) {
+      reject(new Error("IndexedDB no esta disponible en este navegador."));
+      return;
+    }
+
+    const request = window.indexedDB.open(PERSISTENT_CACHE_DB_NAME, PERSISTENT_CACHE_DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const database = request.result;
+
+      if (!database.objectStoreNames.contains(PERSISTENT_TRACK_STORE)) {
+        database.createObjectStore(PERSISTENT_TRACK_STORE, { keyPath: "id" });
+      }
+
+      if (!database.objectStoreNames.contains(PERSISTENT_FOLDER_STORE)) {
+        database.createObjectStore(PERSISTENT_FOLDER_STORE, { keyPath: "folderId" });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("No se pudo abrir el cache local."));
+  });
+}
+
+async function putPersistentRecord(storeName: string, record: unknown) {
+  const database = await openPersistentCacheDatabase();
+
+  return new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(storeName, "readwrite");
+    transaction.objectStore(storeName).put(record);
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error ?? new Error("No se pudo guardar en el cache local."));
+    };
+  });
+}
+
+async function getPersistentRecord<T>(storeName: string, key: string) {
+  const database = await openPersistentCacheDatabase();
+
+  return new Promise<T | undefined>((resolve, reject) => {
+    const transaction = database.transaction(storeName, "readonly");
+    const request = transaction.objectStore(storeName).get(key);
+    request.onsuccess = () => resolve(request.result as T | undefined);
+    request.onerror = () => reject(request.error ?? new Error("No se pudo leer el cache local."));
+    transaction.oncomplete = () => database.close();
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error ?? new Error("No se pudo leer el cache local."));
+    };
+  });
+}
+
+async function getAllPersistentRecords<T>(storeName: string) {
+  const database = await openPersistentCacheDatabase();
+
+  return new Promise<T[]>((resolve, reject) => {
+    const transaction = database.transaction(storeName, "readonly");
+    const request = transaction.objectStore(storeName).getAll();
+    request.onsuccess = () => resolve(request.result as T[]);
+    request.onerror = () => reject(request.error ?? new Error("No se pudo leer el cache local."));
+    transaction.oncomplete = () => database.close();
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error ?? new Error("No se pudo leer el cache local."));
+    };
+  });
+}
+
+async function clearPersistentStore(storeName: string) {
+  const database = await openPersistentCacheDatabase();
+
+  return new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(storeName, "readwrite");
+    transaction.objectStore(storeName).clear();
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error ?? new Error("No se pudo borrar el cache local."));
+    };
+  });
+}
+
+function buildPersistedTrackRecord(track: DriveFile, folderId: string, blob: Blob): PersistedTrackRecord {
+  return {
+    id: track.id,
+    folderId,
+    name: track.name,
+    mimeType: track.mimeType,
+    size: track.size,
+    sizeBytes: blob.size,
+    modifiedTime: track.modifiedTime,
+    blob,
+    savedAt: Date.now(),
+  };
+}
+
+async function savePersistedTrack(track: DriveFile, folderId: string, blob: Blob) {
+  await putPersistentRecord(PERSISTENT_TRACK_STORE, buildPersistedTrackRecord(track, folderId, blob));
+}
+
+async function getPersistedTrack(trackId: string) {
+  return getPersistentRecord<PersistedTrackRecord>(PERSISTENT_TRACK_STORE, trackId);
+}
+
+async function savePersistedFolderTracks(folderId: string, tracks: DriveFile[]) {
+  const record: PersistedFolderRecord = {
+    folderId,
+    tracks,
+    savedAt: Date.now(),
+  };
+
+  await putPersistentRecord(PERSISTENT_FOLDER_STORE, record);
+}
+
+async function getPersistedFolderTracks(folderId: string) {
+  return getPersistentRecord<PersistedFolderRecord>(PERSISTENT_FOLDER_STORE, folderId);
+}
+
+async function getPersistentCacheSummary(): Promise<PersistentCacheSummary> {
+  const records = await getAllPersistentRecords<PersistedTrackRecord>(PERSISTENT_TRACK_STORE);
+
+  return {
+    ids: records.map((record) => record.id),
+    totalBytes: records.reduce((total, record) => total + (record.sizeBytes || record.blob.size || 0), 0),
+  };
+}
+
+async function clearPersistentCache() {
+  await clearPersistentStore(PERSISTENT_TRACK_STORE);
+  await clearPersistentStore(PERSISTENT_FOLDER_STORE);
+}
+
 export default function Home() {
   const configuredClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -153,13 +332,20 @@ export default function Home() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [cachedTrackIds, setCachedTrackIds] = useState<string[]>([]);
+  const [persistedTrackIds, setPersistedTrackIds] = useState<string[]>([]);
+  const [persistentCacheBytes, setPersistentCacheBytes] = useState(0);
+  const [persistentCacheEnabled, setPersistentCacheEnabled] = useState(false);
+  const [activeFolderId, setActiveFolderId] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [status, setStatus] = useState("Pega una URL de carpeta de Drive para empezar.");
   const [error, setError] = useState("");
 
   const currentTrack = tracks[currentIndex];
   const cachedTrackIdSet = useMemo(() => new Set(cachedTrackIds), [cachedTrackIds]);
+  const persistedTrackIdSet = useMemo(() => new Set(persistedTrackIds), [persistedTrackIds]);
   const currentTrackIsCached = currentTrack ? cachedTrackIdSet.has(currentTrack.id) : false;
+  const currentTrackIsPersisted = currentTrack ? persistedTrackIdSet.has(currentTrack.id) : false;
+  const currentTrackCacheLabel = currentTrackIsPersisted ? "Guardada en computadora" : "En cache temporal";
 
   const filteredTracks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -182,6 +368,12 @@ export default function Home() {
     if (savedTheme === "dark" || savedTheme === "light") {
       setTheme(savedTheme);
     }
+
+    setPersistentCacheEnabled(localStorage.getItem(PERSISTENT_CACHE_STORAGE_KEY) === "true");
+    refreshPersistentCacheSummary().catch(() => {
+      setPersistedTrackIds([]);
+      setPersistentCacheBytes(0);
+    });
   }, [configuredClientId]);
 
   useEffect(() => {
@@ -304,6 +496,17 @@ export default function Home() {
     setDuration(0);
   }
 
+  async function refreshPersistentCacheSummary() {
+    try {
+      const summary = await getPersistentCacheSummary();
+      setPersistedTrackIds(summary.ids);
+      setPersistentCacheBytes(summary.totalBytes);
+    } catch {
+      setPersistedTrackIds([]);
+      setPersistentCacheBytes(0);
+    }
+  }
+
   function getAudioCacheSize() {
     let size = 0;
     audioCacheRef.current.forEach((cachedTrack) => {
@@ -340,6 +543,76 @@ export default function Home() {
     setCachedTrackIds([...audioCacheRef.current.keys()]);
   }
 
+  function cacheBlobInMemory(trackId: string, blob: Blob) {
+    const objectUrl = URL.createObjectURL(blob);
+
+    audioCacheRef.current.set(trackId, {
+      objectUrl,
+      blob,
+      size: blob.size,
+      lastUsed: ++cacheTickRef.current,
+    });
+    pruneAudioCache(trackId);
+    setCachedTrackIds([...audioCacheRef.current.keys()]);
+
+    return objectUrl;
+  }
+
+  async function loadSavedFolderFromComputer(folderId: string) {
+    const savedFolder = await getPersistedFolderTracks(folderId);
+    const summary = await getPersistentCacheSummary();
+    const savedTrackIds = new Set(summary.ids);
+    const savedTracks = (savedFolder?.tracks ?? []).filter((track) => savedTrackIds.has(track.id));
+
+    setPersistedTrackIds(summary.ids);
+    setPersistentCacheBytes(summary.totalBytes);
+
+    if (!savedTracks.length) {
+      return false;
+    }
+
+    resetPlayerForFolderChange();
+    setActiveFolderId(folderId);
+    setTracks(savedTracks);
+    setStatus(`${savedTracks.length} canciones guardadas listas desde esta computadora.`);
+    return true;
+  }
+
+  async function handlePersistentCacheToggle(enabled: boolean) {
+    setPersistentCacheEnabled(enabled);
+    localStorage.setItem(PERSISTENT_CACHE_STORAGE_KEY, String(enabled));
+    setError("");
+    await refreshPersistentCacheSummary();
+
+    const folderId = activeFolderId || extractFolderId(folderUrl);
+    if (enabled && folderId && tracks.length) {
+      try {
+        await savePersistedFolderTracks(folderId, tracks);
+        for (const track of tracks) {
+          const cachedTrack = audioCacheRef.current.get(track.id);
+          if (cachedTrack) {
+            await savePersistedTrack(track, folderId, cachedTrack.blob);
+          }
+        }
+        await refreshPersistentCacheSummary();
+      } catch {
+        setError("No se pudo preparar la lista para uso local.");
+      }
+    }
+  }
+
+  async function clearSavedTracks() {
+    setError("");
+    try {
+      await clearPersistentCache();
+      setPersistedTrackIds([]);
+      setPersistentCacheBytes(0);
+      setStatus("Canciones guardadas borradas de esta computadora.");
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : "No se pudo borrar el cache local.");
+    }
+  }
+
   async function loadFolder(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     setError("");
@@ -351,12 +624,31 @@ export default function Home() {
     }
 
     if (!accessToken) {
+      if (persistentCacheEnabled) {
+        setIsLoadingTracks(true);
+        setStatus("Buscando canciones guardadas en esta computadora...");
+        try {
+          const loadedFromComputer = await loadSavedFolderFromComputer(folderId);
+          if (!loadedFromComputer) {
+            setError("No hay canciones guardadas para esa carpeta. Conecta Google para cargarla desde Drive.");
+            setStatus("No encontre canciones guardadas para esa carpeta.");
+          }
+        } catch (loadError) {
+          setError(loadError instanceof Error ? loadError.message : "No se pudo leer el cache local.");
+          setStatus("No se pudo cargar desde esta computadora.");
+        } finally {
+          setIsLoadingTracks(false);
+        }
+        return;
+      }
+
       setError("Primero conecta tu cuenta de Google.");
       return;
     }
 
     localStorage.setItem(FOLDER_STORAGE_KEY, folderUrl.trim());
     resetPlayerForFolderChange();
+    setActiveFolderId(folderId);
     setIsLoadingTracks(true);
     setStatus("Buscando canciones en la carpeta...");
 
@@ -373,6 +665,10 @@ export default function Home() {
       const data = await fetchDriveFiles(params);
       const files = data.files ?? [];
       setTracks(files);
+      if (persistentCacheEnabled) {
+        await savePersistedFolderTracks(folderId, files);
+      }
+      await refreshPersistentCacheSummary();
       setStatus(files.length ? `${files.length} canciones listas.` : "No encontre archivos de audio en esa carpeta.");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudo leer la carpeta.");
@@ -383,10 +679,6 @@ export default function Home() {
   }
 
   async function prepareTrack(track: DriveFile) {
-    if (!accessToken) {
-      throw new Error("Falta conectar Google.");
-    }
-
     setIsLoadingAudio(true);
     const cachedTrack = audioCacheRef.current.get(track.id);
 
@@ -398,9 +690,40 @@ export default function Home() {
         audioRef.current.load();
       }
 
+      if (persistentCacheEnabled && !persistedTrackIdSet.has(track.id)) {
+        try {
+          await savePersistedTrack(track, activeFolderId || extractFolderId(folderUrl), cachedTrack.blob);
+          await refreshPersistentCacheSummary();
+        } catch {
+          setError("La cancion se puede reproducir, pero no se pudo guardar en esta computadora.");
+        }
+      }
+
       setIsLoadingAudio(false);
       setStatus(`Listo desde cache: ${track.name}`);
       return;
+    }
+
+    if (persistentCacheEnabled) {
+      const persistedTrack = await getPersistedTrack(track.id);
+
+      if (persistedTrack?.blob) {
+        const persistedUrl = cacheBlobInMemory(track.id, persistedTrack.blob);
+
+        if (audioRef.current) {
+          audioRef.current.src = persistedUrl;
+          audioRef.current.load();
+        }
+
+        setIsLoadingAudio(false);
+        setStatus(`Listo desde esta computadora: ${track.name}`);
+        await refreshPersistentCacheSummary();
+        return;
+      }
+    }
+
+    if (!accessToken) {
+      throw new Error("Esta cancion no esta guardada. Conecta Google para descargarla desde Drive.");
     }
 
     setStatus(`Descargando ${track.name} de Drive...`);
@@ -415,15 +738,16 @@ export default function Home() {
     }
 
     const blob = await response.blob();
-    const nextUrl = URL.createObjectURL(blob);
+    const nextUrl = cacheBlobInMemory(track.id, blob);
 
-    audioCacheRef.current.set(track.id, {
-      objectUrl: nextUrl,
-      size: blob.size,
-      lastUsed: ++cacheTickRef.current,
-    });
-    pruneAudioCache(track.id);
-    setCachedTrackIds([...audioCacheRef.current.keys()]);
+    if (persistentCacheEnabled) {
+      try {
+        await savePersistedTrack(track, activeFolderId || extractFolderId(folderUrl), blob);
+        await refreshPersistentCacheSummary();
+      } catch {
+        setError("La cancion se puede reproducir, pero no se pudo guardar en esta computadora.");
+      }
+    }
 
     if (audioRef.current) {
       audioRef.current.src = nextUrl;
@@ -654,7 +978,7 @@ export default function Home() {
               <button
                 className="mt-3 w-full rounded-md border border-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-60"
                 type="submit"
-                disabled={isLoadingTracks || !accessToken}
+                disabled={isLoadingTracks || (!accessToken && !persistentCacheEnabled)}
               >
                 {isLoadingTracks ? "Cargando..." : tracks.length ? "Refresh canciones" : "Cargar canciones"}
               </button>
@@ -671,7 +995,7 @@ export default function Home() {
             <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)] shadow-sm">
               <h2 className="text-base font-semibold text-[var(--ink)]">Limites y cache</h2>
               <p className="mt-3 leading-6">
-                El cache guarda audio en memoria hasta {formatCacheLimit(AUDIO_CACHE_LIMIT_BYTES)} por pestana.
+                Consulta los paneles de Google Cloud para revisar cuotas del proyecto y uso general.
               </p>
               <div className="mt-4 grid gap-2">
                 <a
@@ -708,6 +1032,35 @@ export default function Home() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--line)] px-3 py-2 text-xs text-[var(--muted)]">
+                <label className="flex cursor-pointer items-center gap-2 text-[var(--ink)]">
+                  <input
+                    className="switch-input"
+                    type="checkbox"
+                    checked={persistentCacheEnabled}
+                    onChange={(event) => {
+                      void handlePersistentCacheToggle(event.target.checked);
+                    }}
+                  />
+                  <span className="font-semibold">Guardar canciones en la computadora</span>
+                </label>
+                <div className="leading-4">
+                  <p>Local: {persistedTrackIds.length} guardadas</p>
+                  <p>Local size: {formatBytes(persistentCacheBytes)}</p>
+                </div>
+                <p className="min-w-0 flex-1">Tab cache: {formatCacheLimit(AUDIO_CACHE_LIMIT_BYTES)}</p>
+                <button
+                  aria-label="Borrar guardadas"
+                  className="rounded-md border border-[var(--line)] px-2 py-1 font-semibold text-[var(--accent)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    void clearSavedTracks();
+                  }}
+                  disabled={!persistedTrackIds.length}
+                >
+                  Borrar
+                </button>
+              </div>
               {error ? (
                 <p className="mt-3 rounded-md border border-[var(--danger-line)] bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">
                   {error}
@@ -721,6 +1074,8 @@ export default function Home() {
                   {filteredTracks.map((track) => {
                     const realIndex = tracks.findIndex((candidate) => candidate.id === track.id);
                     const active = realIndex === currentIndex;
+                    const trackIsPersisted = persistedTrackIdSet.has(track.id);
+                    const trackIsCached = cachedTrackIdSet.has(track.id);
 
                     return (
                       <li key={track.id}>
@@ -739,7 +1094,9 @@ export default function Home() {
                             <span className="mt-1 block truncate text-xs text-[var(--muted)]">{track.name}</span>
                           </span>
                           <span className="flex items-center justify-end gap-2 text-xs text-[var(--muted)]">
-                            {cachedTrackIdSet.has(track.id) ? <CacheCheckIcon /> : null}
+                            {trackIsPersisted || trackIsCached ? (
+                              <CacheCheckIcon label={trackIsPersisted ? "Guardada en computadora" : "En cache temporal"} />
+                            ) : null}
                             <span>{formatSize(track.size)}</span>
                           </span>
                         </button>
@@ -774,7 +1131,9 @@ export default function Home() {
               <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:px-4 lg:px-6">
                 <div className="min-w-0">
                   <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-                    {currentTrackIsCached ? <CacheCheckIcon /> : null}
+                    {currentTrackIsPersisted || currentTrackIsCached ? (
+                      <CacheCheckIcon label={currentTrackCacheLabel} />
+                    ) : null}
                     <span className="truncate">
                       {currentTrack ? getTrackTitle(currentTrack.name) : "Sin cancion seleccionada"}
                     </span>

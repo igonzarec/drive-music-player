@@ -71,6 +71,45 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
+.switch-input {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: 0 0 46px;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--row-hover);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.switch-input::before {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--muted);
+  content: "";
+  transition:
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.switch-input:checked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.switch-input:checked::before {
+  background: var(--accent);
+  transform: translateX(20px);
+}
+
 [data-theme="dark"] .bg-white {
   background: #101511;
   color: var(--ink);
