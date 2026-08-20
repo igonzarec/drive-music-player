@@ -361,8 +361,11 @@ export default function Home() {
   }, [query, tracks]);
 
   useEffect(() => {
+    const savedFolderUrl = localStorage.getItem(FOLDER_STORAGE_KEY) || "";
+    const savedPersistentCacheEnabled = localStorage.getItem(PERSISTENT_CACHE_STORAGE_KEY) === "true";
+
     setClientId(configuredClientId || localStorage.getItem(CLIENT_ID_STORAGE_KEY) || "");
-    setFolderUrl(localStorage.getItem(FOLDER_STORAGE_KEY) || "");
+    setFolderUrl(savedFolderUrl);
 
     const savedVolume = Number(localStorage.getItem(VOLUME_STORAGE_KEY));
     const nextVolume = Number.isFinite(savedVolume) ? Math.min(Math.max(savedVolume, 0), 1) : 1;
@@ -373,11 +376,16 @@ export default function Home() {
       setTheme(savedTheme);
     }
 
-    setPersistentCacheEnabled(localStorage.getItem(PERSISTENT_CACHE_STORAGE_KEY) === "true");
-    refreshPersistentCacheSummary().catch(() => {
-      setPersistedTrackIds([]);
-      setPersistentCacheBytes(0);
-    });
+    setPersistentCacheEnabled(savedPersistentCacheEnabled);
+    if (savedPersistentCacheEnabled) {
+      setStatus("Buscando canciones guardadas en este dispositivo...");
+      void restoreSavedFolderOnStartup(savedFolderUrl);
+    } else {
+      refreshPersistentCacheSummary().catch(() => {
+        setPersistedTrackIds([]);
+        setPersistentCacheBytes(0);
+      });
+    }
   }, [configuredClientId]);
 
   useEffect(() => {
@@ -580,6 +588,25 @@ export default function Home() {
     setTracks(savedTracks);
     setStatus(`${savedTracks.length} canciones guardadas listas desde esta computadora.`);
     return true;
+  }
+
+  async function restoreSavedFolderOnStartup(savedFolderUrl: string) {
+    const folderId = extractFolderId(savedFolderUrl);
+    if (!folderId) {
+      await refreshPersistentCacheSummary();
+      setStatus("Pega una URL de carpeta de Drive para empezar.");
+      return;
+    }
+
+    try {
+      const loadedFromComputer = await loadSavedFolderFromComputer(folderId);
+      if (!loadedFromComputer) {
+        setStatus("Pega una URL de carpeta de Drive para empezar.");
+      }
+    } catch {
+      await refreshPersistentCacheSummary();
+      setStatus("No se pudo cargar desde este dispositivo.");
+    }
   }
 
   async function handlePersistentCacheToggle(enabled: boolean) {
