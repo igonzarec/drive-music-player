@@ -67,11 +67,11 @@ If the user is outside the owner's Google organization, the owner may need to ad
 The player has two cache layers:
 
 1. Temporary cache: every played song stays in memory for the current browser tab, up to 1 GB.
-2. Computer cache: if `Guardar canciones en la computadora` is enabled, played songs are stored in the browser's IndexedDB.
+2. Computer cache: if `Keep on device` is enabled, played songs are stored in the browser's IndexedDB.
 
 The computer cache does not store Google tokens or the OAuth Client ID. It only stores the audio blobs and basic track metadata on that browser profile. Use `Borrar guardadas` to remove the saved songs from the computer.
 
-Saved songs can play again after refreshing the page or losing the Google session. To load them without reconnecting Google, keep the same Drive folder URL, keep `Guardar canciones en la computadora` enabled, and click `Cargar canciones`.
+Saved songs can play again after refreshing the page or losing the Google session. To load them without reconnecting Google, keep the same Drive folder URL, keep `Keep on device` enabled, and click `Cargar canciones`.
 
 ## Local development
 

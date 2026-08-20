@@ -336,6 +336,7 @@ export default function Home() {
   const [persistentCacheBytes, setPersistentCacheBytes] = useState(0);
   const [persistentCacheEnabled, setPersistentCacheEnabled] = useState(false);
   const [activeFolderId, setActiveFolderId] = useState("");
+  const [isCacheInfoOpen, setIsCacheInfoOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [status, setStatus] = useState("Pega una URL de carpeta de Drive para empezar.");
   const [error, setError] = useState("");
@@ -346,6 +347,9 @@ export default function Home() {
   const currentTrackIsCached = currentTrack ? cachedTrackIdSet.has(currentTrack.id) : false;
   const currentTrackIsPersisted = currentTrack ? persistedTrackIdSet.has(currentTrack.id) : false;
   const currentTrackCacheLabel = currentTrackIsPersisted ? "Guardada en computadora" : "En cache temporal";
+  const cacheInfoText = `Local: ${persistedTrackIds.length} saved | Local size: ${formatBytes(
+    persistentCacheBytes,
+  )} | Tab cache: ${formatCacheLimit(AUDIO_CACHE_LIMIT_BYTES)}`;
 
   const filteredTracks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1032,25 +1036,40 @@ export default function Home() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--line)] px-3 py-2 text-xs text-[var(--muted)]">
-                <label className="flex cursor-pointer items-center gap-2 text-[var(--ink)]">
-                  <input
-                    className="switch-input"
-                    type="checkbox"
-                    checked={persistentCacheEnabled}
-                    onChange={(event) => {
-                      void handlePersistentCacheToggle(event.target.checked);
-                    }}
-                  />
-                  <span className="font-semibold">Guardar canciones en la computadora</span>
-                </label>
-                <div className="leading-4">
-                  <p>Local: {persistedTrackIds.length} guardadas</p>
-                  <p>Local size: {formatBytes(persistentCacheBytes)}</p>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-[var(--line)] px-3 py-2 text-xs text-[var(--muted)]">
+                <div className="relative flex items-center gap-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-[var(--ink)]">
+                    <input
+                      className="switch-input"
+                      type="checkbox"
+                      checked={persistentCacheEnabled}
+                      onChange={(event) => {
+                        void handlePersistentCacheToggle(event.target.checked);
+                      }}
+                    />
+                    <span className="font-semibold">Keep on device</span>
+                  </label>
+                  <button
+                    aria-expanded={isCacheInfoOpen}
+                    aria-label="Cache details"
+                    className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--line)] text-[11px] font-bold text-[var(--muted)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
+                    type="button"
+                    onBlur={() => setIsCacheInfoOpen(false)}
+                    onClick={() => setIsCacheInfoOpen((isOpen) => !isOpen)}
+                  >
+                    i
+                  </button>
+                  {isCacheInfoOpen ? (
+                    <div
+                      className="absolute left-0 top-full z-20 mt-2 max-w-[calc(100vw-2rem)] overflow-auto whitespace-nowrap rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-xs text-[var(--ink)] shadow-lg"
+                      role="tooltip"
+                    >
+                      {cacheInfoText}
+                    </div>
+                  ) : null}
                 </div>
-                <p className="min-w-0 flex-1">Tab cache: {formatCacheLimit(AUDIO_CACHE_LIMIT_BYTES)}</p>
                 <button
-                  aria-label="Borrar guardadas"
+                  aria-label="Clear saved tracks"
                   className="rounded-md border border-[var(--line)] px-2 py-1 font-semibold text-[var(--accent)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
                   type="button"
                   onClick={() => {
@@ -1058,7 +1077,7 @@ export default function Home() {
                   }}
                   disabled={!persistedTrackIds.length}
                 >
-                  Borrar
+                  Clear
                 </button>
               </div>
               {error ? (

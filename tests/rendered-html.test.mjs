@@ -35,8 +35,8 @@ test("server-renders the Drive music player shell", async () => {
   assert.match(html, /URL de Google Drive/);
   assert.match(html, /Cargar canciones/);
   assert.match(html, /Modo oscuro/);
-  assert.match(html, /Guardar canciones en la computadora/);
-  assert.match(html, /Borrar guardadas/);
+  assert.match(html, /Keep on device/);
+  assert.match(html, /Clear saved tracks/);
   assert.match(html, /Cuotas del proyecto/);
   assert.match(html, /Panel general de cuotas/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|react-loading-skeleton/);
